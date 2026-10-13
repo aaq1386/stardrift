@@ -1,5 +1,7 @@
 """Reusable helpers and SQLite-backed save functions."""
 
+import json
+
 from database import Database
 from settings import WIDTH, HEIGHT
 import pygame
@@ -48,3 +50,37 @@ def circle_rect_collision(circle, rect):
         dx,
         dy,
     )
+# === RUN CHECKPOINTS ===
+def save_checkpoint(level, score, lives):
+    """Save a restartable checkpoint at the beginning of a level."""
+    checkpoint = {
+        "level": max(1, int(level)),
+        "score": max(0, int(score)),
+        "lives": max(1, int(lives)),
+    }
+    Database().set_setting("run_checkpoint", json.dumps(checkpoint))
+
+
+def load_checkpoint():
+    """Load a valid checkpoint, if one exists."""
+    raw = Database().get_setting("run_checkpoint")
+    if not raw:
+        return None
+
+    try:
+        data = json.loads(raw)
+        level = int(data["level"])
+        score = int(data["score"])
+        lives = int(data["lives"])
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+    if level < 1 or score < 0 or lives < 1:
+        return None
+
+    return {"level": level, "score": score, "lives": lives}
+
+
+def clear_checkpoint():
+    """Clear only the resumable run, preserving profile and purchases."""
+    Database().set_setting("run_checkpoint", "")

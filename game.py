@@ -14,7 +14,10 @@ from settings import (
     WIDTH, HEIGHT, BG, WHITE, MUTED, CYAN, BLUE, PINK, GOLD,
     TOP_WALL, FPS, GREEN,
 )
-from utils import clamp, draw_text, load_save, save_progress, circle_rect_collision
+from utils import (
+    clamp, draw_text, load_save, save_progress, circle_rect_collision,
+    load_checkpoint, save_checkpoint, clear_checkpoint,
+)
 from economy import Economy
 from shop import Shop
 
@@ -32,6 +35,7 @@ class StarDriftGame:
         saved = load_save()
         self.high_score = saved["high_score"]
         self.best_level = saved["best_level"]
+        self.checkpoint = load_checkpoint()
         self.economy = Economy()
         self.shop = Shop(self.economy.db)
         self.ball_color = self.shop.get_active_ball_color()
@@ -95,6 +99,9 @@ class StarDriftGame:
         }
 
     def start_run(self):
+        # === START A FRESH RUN ===
+        clear_checkpoint()
+        self.checkpoint = None
         self.economy.start_run()
         self.game = self._reset_run()
         self.game["balls"] = [
@@ -104,6 +111,51 @@ class StarDriftGame:
         self.floating_texts.clear()
         self.screen_shake = 0.0
         self.state = "playing"
+        self._save_checkpoint()
+
+    def _save_checkpoint(self):
+        # === SAVE CHECKPOINT AT THE CURRENT LEVEL START ===
+        checkpoint = {
+            "level": self.game["level"],
+            "score": self.game["score"],
+            "lives": self.game["lives"],
+        }
+        save_checkpoint(**checkpoint)
+        self.checkpoint = checkpoint
+
+    def continue_run(self):
+        # === RESUME FROM THE LAST SAVED LEVEL START ===
+        checkpoint = load_checkpoint()
+        if checkpoint is None:
+            self.checkpoint = None
+            return False
+
+        self.economy.start_run(record_game=False)
+        self.game = self._reset_run()
+        self.game["level"] = checkpoint["level"]
+        self.game["score"] = checkpoint["score"]
+        self.game["lives"] = checkpoint["lives"]
+        self.game["bricks"] = make_level(checkpoint["level"])
+
+        paddle = self.game["paddle"]
+        speed = min(650, 390 + checkpoint["level"] * 18)
+        self.game["balls"] = [
+            Ball(
+                paddle.x + paddle.width / 2,
+                paddle.y - 18,
+                speed,
+                attached=True,
+                color=self.ball_color,
+                skin=self.ball_skin,
+            )
+        ]
+
+        self.particles.clear()
+        self.floating_texts.clear()
+        self.screen_shake = 0.0
+        self.state = "playing"
+        self.checkpoint = checkpoint
+        return True
 
     def persist_score(self):
         if self.game["score"] > self.high_score:
@@ -122,6 +174,7 @@ class StarDriftGame:
         )
         self.game["level"] += 1
         self.game["bricks"] = make_level(self.game["level"])
+        self._save_checkpoint()
         self.game["powerups"].clear()
         self.game["level_banner"] = 1.8
         paddle = self.game["paddle"]
@@ -407,6 +460,8 @@ class StarDriftGame:
             play_sound("lose")
             if game["lives"] <= 0:
                 self.persist_score()
+                clear_checkpoint()
+                self.checkpoint = None
                 self.state = "gameover"
             else:
                 game["balls"] = [
@@ -1042,7 +1097,9 @@ class StarDriftGame:
                 self.sound_enabled = enabled
 
             if self.state == "menu":
-                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                if event.key == pygame.K_c:
+                    self.continue_run()
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     self.start_run()
                 elif event.key == pygame.K_s:
                     self.shop_selection = 0
@@ -1144,6 +1201,7 @@ class StarDriftGame:
             self.draw_overlay("STARDRIFT", "A SPACE ARCADE SURVIVAL", [
                 "PRESS ENTER OR CLICK TO START",
                 f"PERSONAL BEST  {self.high_score:,}    ·    BEST SECTOR  {self.best_level:02d}",
+                "C: CONTINUE SAVED RUN",
                 "MOVE: A/D OR ARROWS / MOUSE   ·   LAUNCH: SPACE",
                 "S: UPGRADE SHOP    P: PAUSE    M: SOUND    ESC: QUIT",
             ])

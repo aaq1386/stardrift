@@ -81,9 +81,10 @@ class Economy:
         self._credits += amount
         self.jobs.put(("credits", amount, reason))
 
-    def start_run(self):
+    def start_run(self, record_game=True):
         self.run_paddle_hits = 0
-        self.jobs.put(("stat", "games_played", 1))
+        if record_game:
+            self.jobs.put(("stat", "games_played", 1))
 
     def brick_destroyed(self, max_hp):
         max_hp = int(max_hp)
