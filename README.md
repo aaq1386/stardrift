@@ -33,7 +33,7 @@ The objective is to destroy bricks with the ball while keeping it in play using 
 ### Linux
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
+git clone https://github.com/aaq1386/stardrift.git
 cd stardrift
 
 python3 -m venv .venv
@@ -48,7 +48,7 @@ python main.py
 ### Windows PowerShell
 
 ```powershell
-git clone <YOUR_REPOSITORY_URL>
+git clone https://github.com/aaq1386/stardrift.git
 cd stardrift
 
 py -m venv .venv
@@ -67,7 +67,7 @@ If PowerShell blocks virtual-environment activation, use its Python interpreter 
 .\.venv\Scripts\python.exe main.py
 ```
 
-Replace `<YOUR_REPOSITORY_URL>` with the URL of your GitHub repository.
+Replace `https://github.com/aaq1386/stardrift.git` with the URL of your GitHub repository.
 
 ## Controls
 
