@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Local game data and saves
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+stardrift_save.json
+
+# Backups and temporary files
+*.bak
+*.bak.*
+*.tmp
+*~
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.bak.*
+*.flag-bak
+*.iran-bak
