@@ -1,5 +1,6 @@
 """Non-blocking credit economy for STARDRIFT."""
 
+import json
 from queue import Queue
 from threading import Thread
 
@@ -22,6 +23,7 @@ class Economy:
         self.run_paddle_hits = 0
         self.jobs = Queue()
         self.results = Queue()
+        self.action_results = Queue()
         self._request_id = 0
         self.worker = Thread(
             target=self._database_worker,
@@ -59,6 +61,16 @@ class Economy:
                         message = "Purchase failed. Please try again."
                         items = None
                     self.results.put((request_id, success, message, items))
+                elif operation == "special_spend":
+                    request_id, amount, reason = args
+                    try:
+                        success = self.db.spend_credits(amount, reason)
+                    except Exception as exc:
+                        print(f"[Database worker] Special-action payment failed: {exc}")
+                        success = False
+                    self.action_results.put((request_id, success))
+                elif operation == "checkpoint":
+                    self.db.set_setting("run_checkpoint", args[0])
 
             except Exception as exc:
                 print(f"[Database worker] Failed to save data: {exc}")
@@ -71,6 +83,22 @@ class Economy:
         request_id = self._request_id
         self.jobs.put(("shop_purchase", request_id, shop, upgrade_key))
         return request_id
+
+    def request_special_spend(self, amount, reason):
+        """Queue a special-action payment without blocking the game loop."""
+        self._request_id += 1
+        request_id = self._request_id
+        self.jobs.put(("special_spend", request_id, int(amount), reason))
+        return request_id
+
+    def request_checkpoint(self, level, score, lives):
+        """Queue checkpoint persistence without blocking the game loop."""
+        checkpoint = {
+            "level": max(1, int(level)),
+            "score": max(0, int(score)),
+            "lives": max(1, int(lives)),
+        }
+        self.jobs.put(("checkpoint", json.dumps(checkpoint)))
 
     def _award(self, amount, reason):
         amount = int(amount)

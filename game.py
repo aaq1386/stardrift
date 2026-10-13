@@ -16,10 +16,16 @@ from settings import (
 )
 from utils import (
     clamp, draw_text, load_save, save_progress, circle_rect_collision,
-    load_checkpoint, save_checkpoint, clear_checkpoint,
+    load_checkpoint, clear_checkpoint,
 )
 from economy import Economy
 from shop import Shop
+
+
+def level_ball_speed(level):
+    """Return a controlled launch speed for the given level."""
+    level = max(1, int(level))
+    return min(600, 390 + (level - 1) * 18)
 
 
 class StarDriftGame:
@@ -49,6 +55,11 @@ class StarDriftGame:
         self.shop_purchase_request_id = None
         self.shop_purchase_price = 0
         self.shop_purchase_key = None
+        self.special_action_pending = False
+        self.special_action_request_id = None
+        self.special_action_kind = None
+        self.special_action_cost = 0
+        self.special_action_level = None
         self.shop_selection = 0
         self.shop_scroll = 0
         self.shop_scroll_max = 0
@@ -120,7 +131,7 @@ class StarDriftGame:
             "score": self.game["score"],
             "lives": self.game["lives"],
         }
-        save_checkpoint(**checkpoint)
+        self.economy.request_checkpoint(**checkpoint)
         self.checkpoint = checkpoint
 
     def continue_run(self):
@@ -138,7 +149,7 @@ class StarDriftGame:
         self.game["bricks"] = make_level(checkpoint["level"])
 
         paddle = self.game["paddle"]
-        speed = min(650, 390 + checkpoint["level"] * 18)
+        speed = level_ball_speed(checkpoint["level"])
         self.game["balls"] = [
             Ball(
                 paddle.x + paddle.width / 2,
@@ -182,7 +193,7 @@ class StarDriftGame:
 
         # Start every new level with one fresh ball attached to the paddle.
         # Discarding old balls prevents carrying momentum into the next level.
-        ball_speed = min(650, 390 + self.game["level"] * 18)
+        ball_speed = level_ball_speed(self.game["level"])
         self.game["balls"] = [
             Ball(
                 paddle.x + paddle.width / 2,
@@ -238,6 +249,7 @@ class StarDriftGame:
         self.elapsed += dt
         self.shop_message_timer = max(0.0, self.shop_message_timer - dt)
         self._process_shop_purchase_results()
+        self._process_special_action_results()
         for star in self.stars:
             star.update(dt)
         for particle in self.particles[:]:
@@ -312,7 +324,7 @@ class StarDriftGame:
                 offset = (ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2)
                 offset = clamp(offset, -0.88, 0.88)
                 angle = offset * math.radians(62)
-                ball.speed = min(690, max(360, ball.speed * 1.015))
+                ball.speed = min(640, max(360, ball.speed * 1.01))
                 ball.vx = math.sin(angle) * ball.speed
                 ball.vy = -math.cos(angle) * ball.speed
                 game["score"] += 5
@@ -466,7 +478,7 @@ class StarDriftGame:
             else:
                 game["balls"] = [
                     Ball(paddle.x + paddle.width / 2, paddle.y - 18,
-                         390 + game["level"] * 18, attached=True,
+                         level_ball_speed(game["level"]), attached=True,
                          color=self.ball_color, skin=self.ball_skin)
                 ]
 
@@ -952,97 +964,124 @@ class StarDriftGame:
         )
 
     def _activate_emergency_bomb(self):
-        game = self.game
-
-        if game.get("bomb_level", 0) <= 0:
-            self.shop_message = "Emergency Bomb is locked. Unlock it in the shop."
-            self.shop_message_timer = 2.5
-            return
-
-        if not game["bricks"]:
-            self.shop_message = "No bricks left to destroy."
-            self.shop_message_timer = 2.0
-            return
-
-        # Finish pending rewards before checking the credit balance.
-        self.economy.jobs.join()
-        if not self.economy.db.spend_credits(120, "emergency_bomb_use"):
-            self.economy._credits = self.economy.db.get_profile()["credits"]
-            self.shop_message = "Emergency Bomb costs 120 CR. Not enough credits."
-            self.shop_message_timer = 2.5
-            return
-
-        self.economy._credits = self.economy.db.get_profile()["credits"]
-        targets = random.sample(game["bricks"], min(5, len(game["bricks"])))
-        destroyed_count = 0
-
-        for brick in targets:
-            if brick not in game["bricks"]:
-                continue
-
-            game["bricks"].remove(brick)
-            reward = self.economy.brick_destroyed(brick.max_hp)
-            points = 20 * brick.max_hp * min(5, 1 + game["combo"] // 8)
-            game["score"] += points
-            game["combo"] += 1
-            game["combo_timer"] = 1.8
-            destroyed_count += 1
-
-            self.floating_texts.append(
-                FloatingText(
-                    brick.rect.centerx, brick.rect.centery + 14,
-                    f"+{reward} CR", GOLD
-                )
-            )
-            self.floating_texts.append(
-                FloatingText(
-                    brick.rect.centerx, brick.rect.centery,
-                    f"+{points}", brick.color
-                )
-            )
-            self.emit_particles(
-                brick.rect.centerx, brick.rect.centery, brick.color, 14
-            )
-            if random.random() < 0.14:
-                game["powerups"].append(
-                    PowerUp(brick.rect.centerx, brick.rect.centery)
-                )
-
-        self.floating_texts.append(
-            FloatingText(
-                WIDTH / 2, HEIGHT / 2,
-                f"EMERGENCY BOMB: {destroyed_count} BRICKS!", CYAN
-            )
-        )
-        self.screen_shake = max(self.screen_shake, 0.12)
-        play_sound("power")
+        self._request_special_action("bomb")
 
     def _activate_row_clear(self):
+        self._request_special_action("row_clear")
+
+    def _request_special_action(self, kind):
         game = self.game
 
-        if game.get("row_clear_level", 0) <= 0:
-            self.shop_message = "Row Clear is locked. Unlock it in the shop."
-            self.shop_message_timer = 2.5
+        if self.special_action_pending:
+            self.shop_message = "A special action is already processing."
+            self.shop_message_timer = 1.5
             return
 
+        if kind == "bomb":
+            if game.get("bomb_level", 0) <= 0:
+                self.shop_message = "Emergency Bomb is locked. Unlock it in the shop."
+                self.shop_message_timer = 2.5
+                return
+            cost = 120
+            reason = "emergency_bomb_use"
+        else:
+            if game.get("row_clear_level", 0) <= 0:
+                self.shop_message = "Row Clear is locked. Unlock it in the shop."
+                self.shop_message_timer = 2.5
+                return
+            cost = 180
+            reason = "row_clear_use"
+
         if not game["bricks"]:
-            self.shop_message = "No bricks left to clear."
+            self.shop_message = (
+                "No bricks left to destroy."
+                if kind == "bomb"
+                else "No bricks left to clear."
+            )
             self.shop_message_timer = 2.0
             return
 
-        # Finish pending rewards before checking the credit balance.
-        self.economy.jobs.join()
-        if not self.economy.db.spend_credits(180, "row_clear_use"):
-            self.economy._credits = self.economy.db.get_profile()["credits"]
-            self.shop_message = "Row Clear costs 180 CR. Not enough credits."
+        if self.economy.credits < cost:
+            self.shop_message = (
+                f"Emergency Bomb costs {cost} CR. Not enough credits."
+                if kind == "bomb"
+                else f"Row Clear costs {cost} CR. Not enough credits."
+            )
             self.shop_message_timer = 2.5
             return
 
-        self.economy._credits = self.economy.db.get_profile()["credits"]
+        self.special_action_request_id = self.economy.request_special_spend(
+            cost, reason
+        )
+        self.special_action_kind = kind
+        self.special_action_cost = cost
+        self.special_action_level = game.get("level")
+        self.special_action_pending = True
+        self.shop_message = "Processing special action..."
+        self.shop_message_timer = 1.5
 
-        # Clear the lowest row currently present in the level.
+    def _process_special_action_results(self):
+        while not self.economy.action_results.empty():
+            request_id, success = self.economy.action_results.get_nowait()
+
+            if request_id != self.special_action_request_id:
+                continue
+
+            kind = self.special_action_kind
+            cost = self.special_action_cost
+            requested_level = self.special_action_level
+            self.special_action_pending = False
+            self.special_action_request_id = None
+            self.special_action_kind = None
+            self.special_action_cost = 0
+            self.special_action_level = None
+
+            if not success:
+                self.shop_message = (
+                    "Special action payment failed. Check your credits."
+                )
+                self.shop_message_timer = 2.5
+                continue
+
+            # Preserve rewards already added to the cached balance.
+            self.economy._credits = max(0, self.economy.credits - cost)
+
+            # Do not apply an action after leaving gameplay or clearing the level.
+            if (
+                self.state != "playing"
+                or not self.game["bricks"]
+                or self.game.get("level") != requested_level
+            ):
+                self.economy._award(cost, "special_action_refund")
+                self.shop_message = "Special action cancelled; credits refunded."
+                self.shop_message_timer = 2.5
+                continue
+
+            if kind == "bomb":
+                self._execute_emergency_bomb()
+            elif kind == "row_clear":
+                self._execute_row_clear()
+
+    def _execute_emergency_bomb(self):
+        targets = random.sample(
+            self.game["bricks"], min(5, len(self.game["bricks"]))
+        )
+        self._destroy_special_targets(targets, "EMERGENCY BOMB")
+
+    def _execute_row_clear(self):
+        game = self.game
+        if not game["bricks"]:
+            return
+
         target_y = max(brick.rect.y for brick in game["bricks"])
-        targets = [brick for brick in game["bricks"] if brick.rect.y == target_y]
+        targets = [
+            brick for brick in game["bricks"]
+            if brick.rect.y == target_y
+        ]
+        self._destroy_special_targets(targets, "ROW CLEAR")
+
+    def _destroy_special_targets(self, targets, label):
+        game = self.game
         destroyed_count = 0
 
         for brick in targets:
@@ -1069,8 +1108,9 @@ class StarDriftGame:
                     f"+{points}", brick.color
                 )
             )
+            # Fewer particles reduce the spike during mass destruction.
             self.emit_particles(
-                brick.rect.centerx, brick.rect.centery, brick.color, 14
+                brick.rect.centerx, brick.rect.centery, brick.color, 7
             )
             if random.random() < 0.14:
                 game["powerups"].append(
@@ -1080,7 +1120,7 @@ class StarDriftGame:
         self.floating_texts.append(
             FloatingText(
                 WIDTH / 2, HEIGHT / 2,
-                f"ROW CLEAR: {destroyed_count} BRICKS!", CYAN
+                f"{label}: {destroyed_count} BRICKS!", CYAN
             )
         )
         self.screen_shake = max(self.screen_shake, 0.12)
