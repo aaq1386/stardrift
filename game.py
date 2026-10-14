@@ -10,6 +10,7 @@ from entities.ball import Ball
 from entities.paddle import Paddle
 from entities.powerup import PowerUp
 from levels import make_level
+from regions import get_region
 from settings import (
     WIDTH, HEIGHT, BG, WHITE, MUTED, CYAN, BLUE, PINK, GOLD,
     TOP_WALL, FPS, GREEN,
@@ -78,6 +79,8 @@ class StarDriftGame:
         self.game["balls"] = [
             Ball(WIDTH / 2, self.game["paddle"].y - 18, 390, attached=True, color=self.ball_color, skin=self.ball_skin)
         ]
+
+        audio.start_music()
 
     def _create_paddle(self):
         upgrades = self.economy.db.get_upgrades()
@@ -502,14 +505,17 @@ class StarDriftGame:
             self.next_level()
 
     def draw_background(self):
-        self.screen.fill(BG)
+        region = get_region(self.game["level"])
+        self.screen.fill(region["background"])
         for i in range(5):
             x = (i * 237 + 90) % WIDTH
             y = (i * 139 + 110) % HEIGHT
-            pygame.draw.circle(self.screen, (8, 12, 38), (x, y), 115)
+            pygame.draw.circle(self.screen, region["glow"], (x, y), 115)
         for star in self.stars:
-            star.draw(self.screen, self.elapsed)
-        pygame.draw.line(self.screen, (25, 46, 86), (0, 61), (WIDTH, 61), 1)
+            star.draw(self.screen, self.elapsed, region["star"])
+        pygame.draw.line(
+            self.screen, region["line"], (0, 61), (WIDTH, 61), 1
+        )
 
     def draw_hud(self):
         game = self.game
@@ -520,7 +526,14 @@ class StarDriftGame:
             self.small.render(f"BEST  {max(self.high_score, game['score']):,}", True, GOLD),
             (25, 42),
         )
-        draw_text(self.screen, f"SECTOR {game['level']:02d}", self.font, CYAN, (WIDTH // 2, 25))
+        region = get_region(game["level"])
+        draw_text(
+            self.screen,
+            f"{region['name']}  |  SECTOR {game['level']:02d}",
+            self.font,
+            region["palette"][0],
+            (WIDTH // 2, 25),
+        )
         lives_text = "◆ " * game["lives"]
         self.screen.blit(
             self.font.render(f"LIVES  {lives_text}", True, PINK),
