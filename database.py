@@ -1,7 +1,10 @@
 """SQLite persistence layer for STARDRIFT."""
 
 import json
+import os
+import shutil
 import sqlite3
+import sys
 from contextlib import closing
 from pathlib import Path
 
@@ -9,9 +12,40 @@ from settings import SAVE_FILE
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DATA_DIR = PROJECT_DIR / "data"
-DATABASE_FILE = DATA_DIR / "stardrift.db"
 SCHEMA_VERSION = 1
+
+
+def _default_database_path():
+    """Use project data in development and writable user data when frozen."""
+    if not getattr(sys, "frozen", False):
+        return PROJECT_DIR / "data" / "stardrift.db"
+
+    if os.name == "nt":
+        data_home = Path(
+            os.environ.get(
+                "LOCALAPPDATA",
+                Path.home() / "AppData" / "Local",
+            )
+        )
+    else:
+        data_home = Path(
+            os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")
+        )
+    user_data_dir = data_home / "stardrift"
+    user_database = user_data_dir / "stardrift.db"
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Seed the user's database from the packaged copy on first launch only.
+    bundled_root = Path(getattr(sys, "_MEIPASS", PROJECT_DIR))
+    bundled_database = bundled_root / "data" / "stardrift.db"
+
+    if not user_database.exists() and bundled_database.is_file():
+        shutil.copy2(bundled_database, user_database)
+
+    return user_database
+
+
+DATABASE_FILE = _default_database_path()
 
 
 class Database:
