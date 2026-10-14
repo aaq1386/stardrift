@@ -3,6 +3,7 @@ import hashlib
 import math
 
 from settings import WIDTH, CYAN, BLUE, PURPLE, PINK, GOLD, GREEN
+from regions import get_region
 from entities.brick import Brick
 
 
@@ -141,7 +142,7 @@ def make_level(level):
     brick_w = (WIDTH - margin * 2 - gap * (cols - 1)) // cols
     brick_h = 24
     pattern = (level - 1) % 6
-    palette = [CYAN, BLUE, PURPLE, PINK, GOLD, GREEN]
+    palette = get_region(level)["palette"]
 
     # === CONTROLLED BRICK COUNT ===
     target_count = min(58, 42 + (level - 1) // 4)
@@ -186,31 +187,15 @@ def make_level(level):
             f"Expected {target_count} bricks, got {len(selected_cells)}."
         )
 
-    # === SMOOTH HP PROGRESSION ===
-    # Total extra HP grows gradually, independently of layout geometry.
-    hp_bonus = min(22, (level - 1) // 45)
-    hp3_count = min(6, (level - 1) // 150)
-    hp2_count = hp_bonus - 2 * hp3_count
-
-    hp_ranked_cells = sorted(
-        selected_cells,
-        key=lambda cell: (
-            _variation_key(pattern, cell[0], cell[1], level),
-            cell[0],
-            cell[1],
-        ),
-    )
-    hp3_cells = set(hp_ranked_cells[:hp3_count])
-    hp2_cells = set(hp_ranked_cells[hp3_count:hp3_count + hp2_count])
-
+    # === HP PROGRESSION ===
+    # Preserve the established multi-hit brick rules.
     bricks = []
     for row, col in sorted(selected_cells):
-        if (row, col) in hp3_cells:
-            hp = 3
-        elif (row, col) in hp2_cells:
+        hp = 1
+        if level >= 2 and (row * 3 + col * 5 + level) % 7 == 0:
             hp = 2
-        else:
-            hp = 1
+        if level >= 4 and (row + col * 2 + level) % 17 == 0:
+            hp = 3
 
         color = palette[(row + level - 1) % len(palette)]
         bricks.append(Brick(
