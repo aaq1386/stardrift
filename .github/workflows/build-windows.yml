@@ -40,7 +40,7 @@ jobs:
             --distpath "release/windows/dist" `
             --workpath "release/windows/build" `
             --specpath "release/windows" `
-            --add-data "assets/music;assets/music" `
+            --add-data "$((Get-Location).Path)\assets\music;assets\music" `
             --collect-all appdirs `
             --hidden-import appdirs `
             main.py
