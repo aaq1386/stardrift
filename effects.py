@@ -21,9 +21,20 @@ class Star:
             self.y = 0
             self.x = random.uniform(0, WIDTH)
 
-    def draw(self, surface, elapsed):
-        glow = 100 + int(90 * (0.5 + 0.5 * math.sin(self.phase + elapsed)))
-        color = (min(255, glow // 2), min(255, glow), min(255, glow + 35))
+    def draw(self, surface, elapsed, region_color=None):
+        twinkle = 0.55 + 0.45 * (
+            0.5 + 0.5 * math.sin(self.phase + elapsed)
+        )
+
+        if region_color is None:
+            glow = 100 + int(90 * (0.5 + 0.5 * math.sin(self.phase + elapsed)))
+            color = (min(255, glow // 2), min(255, glow), min(255, glow + 35))
+        else:
+            color = tuple(
+                max(0, min(255, int(channel * twinkle)))
+                for channel in region_color
+            )
+
         pygame.draw.circle(surface, color, (int(self.x), int(self.y)), self.radius)
 
 
